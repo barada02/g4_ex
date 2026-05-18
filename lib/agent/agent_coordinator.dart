@@ -13,6 +13,7 @@ import 'tools/multiplication_tool.dart';
 import 'tools/note_clear_tool.dart';
 import 'tools/note_insert_tool.dart';
 import 'tools/note_search_tool.dart';
+import 'tools/notes_dashboard_tool.dart';
 
 class AgentCoordinator {
   static const _modelUrl =
@@ -36,6 +37,7 @@ Do not output JSON. Provide a helpful final response.
     _registry.registerTool(NoteInsertTool(_database));
     _registry.registerTool(NoteSearchTool(_database));
     _registry.registerTool(NoteClearTool(_database));
+    _registry.registerTool(NotesDashboardTool(_database));
   }
 
   void registerTool(BaseTool tool) {
@@ -101,7 +103,14 @@ Do not output JSON. Provide a helpful final response.
     }
 
     final result = await tool.execute(decision.arguments);
-    if (result.output.isNotEmpty) {
+    if (result.uiComponentType != null && result.uiData != null) {
+      yield AgentEvent(
+        type: AgentEventType.uiRender,
+        data: result.output,
+        uiComponentType: result.uiComponentType,
+        uiData: result.uiData,
+      );
+    } else if (result.output.isNotEmpty) {
       yield AgentEvent(type: AgentEventType.toolResult, data: result.output);
     }
 

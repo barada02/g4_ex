@@ -3,11 +3,15 @@ class ToolResult {
     required this.toolName,
     required this.output,
     this.isError = false,
+    this.uiComponentType,
+    this.uiData,
   });
 
   final String toolName;
   final String output;
   final bool isError;
+  final String? uiComponentType;
+  final Map<String, dynamic>? uiData;
 }
 
 abstract class BaseTool {

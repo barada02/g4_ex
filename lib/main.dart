@@ -39,18 +39,26 @@ class MainApp extends StatelessWidget {
   }
 }
 
+enum MessageContentType { text, dynamicUi }
+
 class ChatMessage {
   ChatMessage({
     required this.text,
     required this.isUser,
     this.imageBytes,
     this.isTool = false,
+    this.contentType = MessageContentType.text,
+    this.uiComponentType,
+    this.uiData,
   });
 
   final String text;
   final bool isUser;
   final Uint8List? imageBytes;
   final bool isTool;
+  final MessageContentType contentType;
+  final String? uiComponentType;
+  final Map<String, dynamic>? uiData;
 }
 
 class ChatPage extends StatefulWidget {
@@ -144,6 +152,24 @@ class _ChatPageState extends State<ChatPage> {
           continue;
         }
 
+        if (event.type == AgentEventType.uiRender) {
+          setState(() {
+            _messages.insert(
+              assistantIndex,
+              ChatMessage(
+                text: event.data,
+                isUser: false,
+                contentType: MessageContentType.dynamicUi,
+                uiComponentType: event.uiComponentType,
+                uiData: event.uiData,
+              ),
+            );
+            assistantIndex += 1;
+          });
+          _scrollToBottom();
+          continue;
+        }
+
         setState(() {
           final current = _messages[assistantIndex].text;
           _messages[assistantIndex] = ChatMessage(
@@ -182,6 +208,78 @@ class _ChatPageState extends State<ChatPage> {
         );
       }
     });
+  }
+
+  Widget _buildDynamicUi(ChatMessage message) {
+    if (message.uiComponentType == 'notes_dashboard') {
+      final data = message.uiData ?? {};
+      final title = data['title']?.toString() ?? 'Notes overview';
+      final total = data['totalNotes']?.toString() ?? '0';
+      final latestNotes = (data['latestNotes'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>();
+
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2DED8)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x11000000),
+              blurRadius: 6,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.analytics_outlined, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Total notes: $total',
+              style: const TextStyle(fontSize: 14),
+            ),
+            if (latestNotes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Latest notes',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              for (final note in latestNotes)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '- ${note['title'] ?? 'Untitled'}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return Text(
+      message.text,
+      style: const TextStyle(color: Color(0xFF1F1F1F)),
+    );
   }
 
   Future<void> _pickImage() async {
@@ -307,39 +405,47 @@ class _ChatPageState extends State<ChatPage> {
                                           : const Color(0xFFE2DED8),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (message.imageBytes != null)
-                                      ClipRRect(
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                        child: Image.memory(
-                                          message.imageBytes!,
-                                          width: 220,
-                                          height: 220,
-                                          fit: BoxFit.cover,
-                                        ),
+                                child: message.contentType ==
+                                        MessageContentType.dynamicUi
+                                    ? _buildDynamicUi(message)
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          if (message.imageBytes != null)
+                                            ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              child: Image.memory(
+                                                message.imageBytes!,
+                                                width: 220,
+                                                height: 220,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                          if (message.text.isNotEmpty)
+                                            Padding(
+                                              padding: EdgeInsets.only(
+                                                top: message.imageBytes == null
+                                                    ? 0
+                                                    : 10,
+                                              ),
+                                              child: Text(
+                                                message.text,
+                                                style: TextStyle(
+                                                  color: message.isUser
+                                                      ? Colors.white
+                                                      : const Color(
+                                                          0xFF1F1F1F,
+                                                        ),
+                                                  fontWeight: message.isTool
+                                                      ? FontWeight.w600
+                                                      : FontWeight.normal,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
-                                    if (message.text.isNotEmpty)
-                                      Padding(
-                                        padding: EdgeInsets.only(
-                                          top: message.imageBytes == null ? 0 : 10,
-                                        ),
-                                        child: Text(
-                                          message.text,
-                                          style: TextStyle(
-                                            color: message.isUser
-                                                ? Colors.white
-                                                : const Color(0xFF1F1F1F),
-                                            fontWeight: message.isTool
-                                                ? FontWeight.w600
-                                                : FontWeight.normal,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
                               ),
                             );
                           },
