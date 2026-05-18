@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_html/flutter_html.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'agent/agent_coordinator.dart';
@@ -27,9 +28,9 @@ class MainApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF6F4F1),
-        textTheme: const TextTheme(
-          bodyMedium: TextStyle(
+        scaffoldBackgroundColor: Colors.transparent,
+        textTheme: GoogleFonts.loraTextTheme().copyWith(
+          bodyMedium: const TextStyle(
             fontSize: 16,
             height: 1.4,
           ),
@@ -199,6 +200,14 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  void _sendQuickPrompt(String prompt) {
+    if (_isSending) {
+      return;
+    }
+    _inputController.text = prompt;
+    _sendMessage();
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -322,7 +331,7 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gemma Local Chat'),
+        title: const Text('Offline Medical Assistant'),
         centerTitle: true,
         elevation: 0,
         backgroundColor: const Color(0xFFF6F4F1),
@@ -336,12 +345,69 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
       body: SafeArea(
-        child: _isInitializing
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? Center(child: Text(_errorMessage!))
-                : Column(
-                    children: [
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFF9F4EF), Color(0xFFEFE7DD)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: _isInitializing
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMessage != null
+                  ? Center(child: Text(_errorMessage!))
+                  : Column(
+                      children: [
+                      Container(
+                        margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE2DED8)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Quick actions',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF1F1F1F),
+                                  ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                OutlinedButton(
+                                  onPressed: () => _sendQuickPrompt(
+                                    'Show the bleeding control protocol.',
+                                  ),
+                                  child: const Text('Bleeding protocol'),
+                                ),
+                                OutlinedButton(
+                                  onPressed: () => _sendQuickPrompt(
+                                    'Add 12 bandage rolls to inventory in Clinic Box A.',
+                                  ),
+                                  child: const Text('Add inventory'),
+                                ),
+                                OutlinedButton(
+                                  onPressed: () => _sendQuickPrompt(
+                                    'Log incident: sprained ankle, swelling, medium severity.',
+                                  ),
+                                  child: const Text('Log incident'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                       Expanded(
                         child: ListView.builder(
                           controller: _scrollController,
@@ -537,8 +603,9 @@ class _ChatPageState extends State<ChatPage> {
                           ],
                         ),
                       ),
-                    ],
-                  ),
+                      ],
+                    ),
+        ),
       ),
     );
   }

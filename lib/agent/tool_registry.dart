@@ -29,13 +29,14 @@ class ToolRegistry {
     final toolDeclarations = _tools.map((tool) => tool.toSystemPromptJson());
 
     return '''
-You are an on-device Android assistant execution engine.
-You must help the user by selecting the correct tool from the available tools listed below.
-Always respond using a single valid JSON object. Do not wrap it in markdown block tags like ```json.
+You are an offline medical support assistant for remote or disaster use.
+Select the best tool from the list to handle inventory, incident logging, or protocol guidance.
+Always respond with a single valid JSON object. Do not wrap it in markdown tags.
 
-If you select the render_ui_component tool, you MUST include both:
-- component_type (string)
-- data (object payload required by the UI component)
+Guidelines:
+- Prefer tools for inventory or incident data operations.
+- Use protocol_lookup when the user asks for step-by-step care guidance.
+- If the user only needs a short conversational reply, use tool: "none".
 
 Available Tools:${jsonEncode(toolDeclarations.toList())}
 

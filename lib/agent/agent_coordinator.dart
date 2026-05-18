@@ -8,21 +8,23 @@ import 'agent_events.dart';
 import '../data/isar_database.dart';
 import 'base_tool.dart';
 import 'tool_registry.dart';
-import 'tools/battery_status_tool.dart';
-import 'tools/html_render_tool.dart';
-import 'tools/multiplication_tool.dart';
-import 'tools/note_clear_tool.dart';
-import 'tools/note_insert_tool.dart';
-import 'tools/note_search_tool.dart';
+import 'tools/incident_log_tool.dart';
+import 'tools/incident_search_tool.dart';
+import 'tools/inventory_add_tool.dart';
+import 'tools/inventory_low_stock_tool.dart';
+import 'tools/inventory_search_tool.dart';
+import 'tools/inventory_update_tool.dart';
+import 'tools/protocol_lookup_tool.dart';
 
 class AgentCoordinator {
   static const _modelUrl =
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
 
   static const _finalResponseInstructions = '''
-You are an on-device Android assistant.
+You are an offline medical support assistant.
 A tool was executed for the user. Use the tool result and respond conversationally.
-Do not output JSON. Provide a helpful final response.
+Do not output JSON. Provide clear, calm guidance and next steps.
+Add a short safety reminder when discussing medical care.
 ''';
 
   final ToolRegistry _registry = ToolRegistry();
@@ -32,12 +34,13 @@ Do not output JSON. Provide a helpful final response.
   dynamic _model;
 
   AgentCoordinator() {
-    _registry.registerTool(MultiplicationTool());
-    _registry.registerTool(BatteryStatusTool());
-    _registry.registerTool(NoteInsertTool(_database));
-    _registry.registerTool(NoteSearchTool(_database));
-    _registry.registerTool(NoteClearTool(_database));
-    _registry.registerTool(HtmlRenderTool());
+    _registry.registerTool(InventoryAddTool(_database));
+    _registry.registerTool(InventoryUpdateTool(_database));
+    _registry.registerTool(InventorySearchTool(_database));
+    _registry.registerTool(InventoryLowStockTool(_database));
+    _registry.registerTool(IncidentLogTool(_database));
+    _registry.registerTool(IncidentSearchTool(_database));
+    _registry.registerTool(ProtocolLookupTool());
   }
 
   void registerTool(BaseTool tool) {
