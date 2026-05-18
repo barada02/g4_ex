@@ -212,7 +212,10 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildDynamicUi(ChatMessage message) {
     if (message.uiComponentType == 'notes_dashboard') {
-      final data = message.uiData ?? {};
+      final rawData = message.uiData ?? {};
+      final data = rawData['data'] is Map<String, dynamic>
+          ? rawData['data'] as Map<String, dynamic>
+          : rawData;
       final title = data['title']?.toString() ?? 'Notes overview';
       final total = data['totalNotes']?.toString() ?? '0';
       final latestNotes = (data['latestNotes'] as List<dynamic>? ?? [])
