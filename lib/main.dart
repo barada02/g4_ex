@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'services/gemma_service.dart';
+import 'agent/agent_events.dart';
+import 'agent/local_agent_framework.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,11 +44,13 @@ class ChatMessage {
     required this.text,
     required this.isUser,
     this.imageBytes,
+    this.isTool = false,
   });
 
   final String text;
   final bool isUser;
   final Uint8List? imageBytes;
+  final bool isTool;
 }
 
 class ChatPage extends StatefulWidget {
@@ -58,7 +61,7 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
-  final _service = GemmaChatService.instance;
+  final _agent = LocalAgentFramework();
   final _messages = <ChatMessage>[];
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
@@ -77,7 +80,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _initialize() async {
     try {
-      await _service.initialize();
+      await _agent.initialize();
     } catch (error) {
       _errorMessage = error.toString();
     } finally {
@@ -93,7 +96,7 @@ class _ChatPageState extends State<ChatPage> {
   void dispose() {
     _inputController.dispose();
     _scrollController.dispose();
-    _service.dispose();
+    _agent.dispose();
     super.dispose();
   }
 
@@ -118,19 +121,35 @@ class _ChatPageState extends State<ChatPage> {
     _scrollToBottom();
 
     final responseIndex = _messages.length - 1;
+    var assistantIndex = responseIndex;
 
     try {
-      await for (final chunk in _service.sendMessage(
+      await for (final event in _agent.runAgentCycle(
         text,
         imageBytes: imageBytes,
       )) {
         if (!mounted) {
           return;
         }
+
+        if (event.type == AgentEventType.toolResult) {
+          setState(() {
+            _messages.insert(
+              assistantIndex,
+              ChatMessage(text: event.data, isUser: false, isTool: true),
+            );
+            assistantIndex += 1;
+          });
+          _scrollToBottom();
+          continue;
+        }
+
         setState(() {
-          final current = _messages[responseIndex].text;
-          _messages[responseIndex] =
-              ChatMessage(text: '$current$chunk', isUser: false);
+          final current = _messages[assistantIndex].text;
+          _messages[assistantIndex] = ChatMessage(
+            text: '$current${event.data}',
+            isUser: false,
+          );
         });
         _scrollToBottom();
       }
@@ -283,7 +302,9 @@ class _ChatPageState extends State<ChatPage> {
                                 decoration: BoxDecoration(
                                   color: message.isUser
                                       ? const Color(0xFF1F1F1F)
-                                      : const Color(0xFFE2DED8),
+                                      : message.isTool
+                                          ? const Color(0xFFD9C9B6)
+                                          : const Color(0xFFE2DED8),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 child: Column(
@@ -311,6 +332,9 @@ class _ChatPageState extends State<ChatPage> {
                                             color: message.isUser
                                                 ? Colors.white
                                                 : const Color(0xFF1F1F1F),
+                                            fontWeight: message.isTool
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
                                           ),
                                         ),
                                       ),
