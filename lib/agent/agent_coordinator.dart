@@ -5,29 +5,14 @@ import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma/core/model.dart';
 
 import 'agent_events.dart';
-import 'agent_tools.dart';
+import 'base_tool.dart';
+import 'tool_registry.dart';
+import 'tools/battery_status_tool.dart';
+import 'tools/multiplication_tool.dart';
 
-class LocalAgentFramework {
+class AgentCoordinator {
   static const _modelUrl =
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
-
-  static const _systemInstructions = '''
-You are an on-device Android assistant execution engine.
-You must help the user by selecting the correct tool from the available tools listed below.
-Always respond using a single valid JSON object. Do not wrap it in markdown block tags like ```json.
-
-Available Tools:
-1. "calculate_multiplication"
-   Description: Use this only when the user explicitly asks to multiply two numbers.
-   Arguments: {"num1": number, "num2": number}
-
-2. "get_battery_status"
-   Description: Use this when the user asks about the device battery or power level.
-   Arguments: {}
-
-If no tool matches the request, respond with this JSON format instead:
-{"tool": "none", "reply": "Your conversational answer here"}
-''';
 
   static const _finalResponseInstructions = '''
 You are an on-device Android assistant.
@@ -35,10 +20,23 @@ A tool was executed for the user. Use the tool result and respond conversational
 Do not output JSON. Provide a helpful final response.
 ''';
 
-  final AgentTools _tools = AgentTools();
+  final ToolRegistry _registry = ToolRegistry();
 
   bool _ready = false;
   dynamic _model;
+
+  AgentCoordinator() {
+    _registry.registerTool(MultiplicationTool());
+    _registry.registerTool(BatteryStatusTool());
+  }
+
+  void registerTool(BaseTool tool) {
+    _registry.registerTool(tool);
+  }
+
+  void unregisterTool(String name) {
+    _registry.unregisterTool(name);
+  }
 
   Future<void> initialize() async {
     if (_ready) {
@@ -83,19 +81,28 @@ Do not output JSON. Provide a helpful final response.
       return;
     }
 
-    final execution = await _tools.execute(decision.tool, decision.arguments);
-    if (execution.output.isNotEmpty) {
-      yield AgentEvent(type: AgentEventType.toolResult, data: execution.output);
+    final tool = _registry.findTool(decision.tool);
+    if (tool == null) {
+      yield AgentEvent(
+        type: AgentEventType.responseToken,
+        data: '⚠️ Agent called an unknown tool: "${decision.tool}"',
+      );
+      return;
     }
 
-    if (execution.output.startsWith('⚠️')) {
-      yield AgentEvent(type: AgentEventType.responseToken, data: execution.output);
+    final result = await tool.execute(decision.arguments);
+    if (result.output.isNotEmpty) {
+      yield AgentEvent(type: AgentEventType.toolResult, data: result.output);
+    }
+
+    if (result.isError) {
+      yield AgentEvent(type: AgentEventType.responseToken, data: result.output);
       return;
     }
 
     await for (final chunk in _getFinalResponse(
       userPrompt,
-      toolResult: execution.output,
+      toolResult: result.output,
       imageBytes: imageBytes,
     )) {
       yield AgentEvent(type: AgentEventType.responseToken, data: chunk);
@@ -109,7 +116,7 @@ Do not output JSON. Provide a helpful final response.
     final session = await _model.createSession(temperature: 0.0);
 
     await session.addQueryChunk(
-      Message(text: _systemInstructions, isUser: false),
+      Message(text: _registry.buildSystemPrompt(), isUser: false),
     );
     await session.addQueryChunk(
       Message(
@@ -156,28 +163,39 @@ Do not output JSON. Provide a helpful final response.
   }
 
   _AgentDecision _parseDecision(String rawJson) {
-    try {
-      final parsed = jsonDecode(rawJson);
-      if (parsed is! Map<String, dynamic>) {
-        return _AgentDecision.none(
-          reply: 'Framework error: tool response was not a JSON object.',
-        );
-      }
-
-      final tool = parsed['tool']?.toString() ?? 'none';
-      final reply = parsed['reply']?.toString() ?? '';
-      final arguments = parsed['arguments'];
-
-      return _AgentDecision(
-        tool: tool,
-        reply: reply,
-        arguments: arguments is Map<String, dynamic> ? arguments : <String, dynamic>{},
-      );
-    } catch (error) {
+    final decoded = _tryDecodeJson(rawJson);
+    if (decoded is! Map<String, dynamic>) {
       return _AgentDecision.none(
-        reply:
-            'Framework error: Gemma output failed validation. Raw: $rawJson',
+        reply: 'Framework error: tool response was not a JSON object.',
       );
+    }
+
+    final tool = decoded['tool']?.toString() ?? 'none';
+    final reply = decoded['reply']?.toString() ?? '';
+    final arguments = decoded['arguments'];
+
+    return _AgentDecision(
+      tool: tool,
+      reply: reply,
+      arguments: arguments is Map<String, dynamic> ? arguments : <String, dynamic>{},
+    );
+  }
+
+  dynamic _tryDecodeJson(String rawJson) {
+    try {
+      return jsonDecode(rawJson);
+    } catch (_) {
+      final start = rawJson.indexOf('{');
+      final end = rawJson.lastIndexOf('}');
+      if (start == -1 || end == -1 || end <= start) {
+        return null;
+      }
+      final candidate = rawJson.substring(start, end + 1);
+      try {
+        return jsonDecode(candidate);
+      } catch (_) {
+        return null;
+      }
     }
   }
 
