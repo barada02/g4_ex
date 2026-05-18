@@ -5,10 +5,14 @@ import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma/core/model.dart';
 
 import 'agent_events.dart';
+import '../data/isar_database.dart';
 import 'base_tool.dart';
 import 'tool_registry.dart';
 import 'tools/battery_status_tool.dart';
 import 'tools/multiplication_tool.dart';
+import 'tools/note_clear_tool.dart';
+import 'tools/note_insert_tool.dart';
+import 'tools/note_search_tool.dart';
 
 class AgentCoordinator {
   static const _modelUrl =
@@ -21,6 +25,7 @@ Do not output JSON. Provide a helpful final response.
 ''';
 
   final ToolRegistry _registry = ToolRegistry();
+  final IsarDatabase _database = IsarDatabase();
 
   bool _ready = false;
   dynamic _model;
@@ -28,6 +33,9 @@ Do not output JSON. Provide a helpful final response.
   AgentCoordinator() {
     _registry.registerTool(MultiplicationTool());
     _registry.registerTool(BatteryStatusTool());
+    _registry.registerTool(NoteInsertTool(_database));
+    _registry.registerTool(NoteSearchTool(_database));
+    _registry.registerTool(NoteClearTool(_database));
   }
 
   void registerTool(BaseTool tool) {
@@ -47,6 +55,8 @@ Do not output JSON. Provide a helpful final response.
       modelType: ModelType.gemmaIt,
       fileType: ModelFileType.litertlm,
     ).fromNetwork(_modelUrl).install();
+
+    await _database.initialize();
 
     _model = await FlutterGemma.getActiveModel(
       maxTokens: 4096,
@@ -201,6 +211,7 @@ Do not output JSON. Provide a helpful final response.
 
   Future<void> dispose() async {
     _ready = false;
+    await _database.close();
   }
 }
 
