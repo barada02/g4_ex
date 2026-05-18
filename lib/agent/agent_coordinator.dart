@@ -3,17 +3,21 @@ import 'dart:typed_data';
 
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma/core/model.dart';
+import 'package:isar_community/isar.dart';
 
 import 'agent_events.dart';
 import '../data/isar_database.dart';
+import '../data/note.dart';
 import 'base_tool.dart';
 import 'tool_registry.dart';
 import 'tools/incident_log_tool.dart';
 import 'tools/incident_search_tool.dart';
+import 'tools/html_render_tool.dart';
 import 'tools/inventory_add_tool.dart';
 import 'tools/inventory_low_stock_tool.dart';
 import 'tools/inventory_search_tool.dart';
 import 'tools/inventory_update_tool.dart';
+import 'tools/medical_store.dart';
 import 'tools/protocol_lookup_tool.dart';
 
 class AgentCoordinator {
@@ -41,6 +45,7 @@ Add a short safety reminder when discussing medical care.
     _registry.registerTool(IncidentLogTool(_database));
     _registry.registerTool(IncidentSearchTool(_database));
     _registry.registerTool(ProtocolLookupTool());
+    _registry.registerTool(HtmlRenderTool());
   }
 
   void registerTool(BaseTool tool) {
@@ -62,6 +67,7 @@ Add a short safety reminder when discussing medical care.
     ).fromNetwork(_modelUrl).install();
 
     await _database.initialize();
+    await _seedDemoData();
 
     _model = await FlutterGemma.getActiveModel(
       maxTokens: 4096,
@@ -224,6 +230,75 @@ Add a short safety reminder when discussing medical care.
   Future<void> dispose() async {
     _ready = false;
     await _database.close();
+  }
+
+  Future<void> _seedDemoData() async {
+    final isar = _database.instance;
+    final collection = isar.collection<Note>();
+    final count = await collection.count();
+    if (count > 0) {
+      return;
+    }
+
+    final demoInventory = [
+      buildInventoryPayload(
+        name: 'Bandage Roll',
+        quantity: 18,
+        unit: 'rolls',
+        location: 'Clinic Box A',
+        expiry: '2026-09-01',
+        notes: 'Sterile gauze bandage rolls.',
+      ),
+      buildInventoryPayload(
+        name: 'Antiseptic Wipes',
+        quantity: 42,
+        unit: 'packs',
+        location: 'Clinic Box B',
+        expiry: '2027-01-15',
+      ),
+      buildInventoryPayload(
+        name: 'Pain Relief Tablets',
+        quantity: 60,
+        unit: 'tablets',
+        location: 'Clinic Box C',
+        expiry: '2026-12-31',
+        notes: 'Adult dosage only.',
+      ),
+    ];
+
+    final demoIncidents = [
+      buildIncidentPayload(
+        title: 'Sprained Ankle',
+        description: 'Swelling after evacuation walk, pain on weight bearing.',
+        severity: 'medium',
+        symptoms: 'Swelling, tenderness',
+        actionTaken: 'Rest, cold pack, compression wrap.',
+      ),
+      buildIncidentPayload(
+        title: 'Minor Burn',
+        description: 'Contact with hot pan, redness and mild blistering.',
+        severity: 'low',
+        symptoms: 'Redness, warmth',
+        actionTaken: 'Cooled with clean water, covered with clean dressing.',
+      ),
+    ];
+
+    final notes = <Note>[
+      for (final item in demoInventory)
+        Note()
+          ..title = item['name']?.toString() ?? 'Inventory Item'
+          ..content = encodePayload(item)
+          ..createdAt = DateTime.now(),
+      for (final incident in demoIncidents)
+        Note()
+          ..title = incident['title']?.toString() ?? 'Incident'
+          ..content = encodePayload(incident)
+          ..createdAt = DateTime.now(),
+    ];
+
+    await isar.writeTxn(() async {
+      await collection.putAll(notes);
+    });
   }
 }
 
