@@ -332,42 +332,45 @@ class _ChatPageState extends State<ChatPage> {
                             ),
                           ),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             if (_pendingImage != null)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
-                                child: Row(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Image.memory(
-                                        _pendingImage!,
-                                        width: 56,
-                                        height: 56,
-                                        fit: BoxFit.cover,
+                                child: SizedBox(
+                                  height: 64,
+                                  child: Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.memory(
+                                          _pendingImage!,
+                                          width: 56,
+                                          height: 56,
+                                          fit: BoxFit.cover,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        'Image attached',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium,
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'Image attached',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium,
+                                        ),
                                       ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Remove image',
-                                      onPressed: () {
-                                        setState(() {
-                                          _pendingImage = null;
-                                        });
-                                      },
-                                      icon: const Icon(Icons.close_rounded),
-                                    ),
-                                  ],
+                                      IconButton(
+                                        tooltip: 'Remove image',
+                                        onPressed: () {
+                                          setState(() {
+                                            _pendingImage = null;
+                                          });
+                                        },
+                                        icon: const Icon(Icons.close_rounded),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             Row(
