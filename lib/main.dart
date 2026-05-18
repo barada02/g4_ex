@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'agent/agent_coordinator.dart';
@@ -211,6 +212,39 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildDynamicUi(ChatMessage message) {
+    if (message.uiComponentType == 'html') {
+      final raw = message.uiData?['html']?.toString() ?? '';
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2DED8)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x11000000),
+              blurRadius: 6,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Html(
+          data: raw,
+          style: {
+            'body': Style(
+              margin: Margins.zero,
+              padding: HtmlPaddings.zero,
+              fontSize: FontSize(14.0),
+            ),
+            'table': Style(
+              backgroundColor: Colors.white,
+              border: Border.all(color: const Color(0xFFE2DED8)),
+            ),
+          },
+        ),
+      );
+    }
+
     if (message.uiComponentType == 'notes_dashboard') {
       final rawData = message.uiData ?? {};
       final data = rawData['data'] is Map<String, dynamic>

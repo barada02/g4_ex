@@ -9,6 +9,7 @@ import '../data/isar_database.dart';
 import 'base_tool.dart';
 import 'tool_registry.dart';
 import 'tools/battery_status_tool.dart';
+import 'tools/html_render_tool.dart';
 import 'tools/multiplication_tool.dart';
 import 'tools/note_clear_tool.dart';
 import 'tools/note_insert_tool.dart';
@@ -38,6 +39,7 @@ Do not output JSON. Provide a helpful final response.
     _registry.registerTool(NoteSearchTool(_database));
     _registry.registerTool(NoteClearTool(_database));
     _registry.registerTool(NotesDashboardTool(_database));
+    _registry.registerTool(HtmlRenderTool());
   }
 
   void registerTool(BaseTool tool) {
