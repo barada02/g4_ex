@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma/core/model.dart';
 
@@ -38,13 +40,17 @@ class GemmaChatService {
 		_ready = true;
 	}
 
-	Stream<String> sendMessage(String text) async* {
+	Stream<String> sendMessage(String text, {Uint8List? imageBytes}) async* {
 		if (!_ready) {
 			await initialize();
 		}
 
 		await _session.addQueryChunk(
-			Message(text: text, isUser: true),
+			Message(
+				text: text,
+				images: imageBytes == null ? <Uint8List>[] : [imageBytes],
+				isUser: true,
+			),
 		);
 
 		await for (final chunk in _session.getResponseAsync()) {

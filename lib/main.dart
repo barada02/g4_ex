@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'services/gemma_service.dart';
 
@@ -36,10 +39,15 @@ class MainApp extends StatelessWidget {
 }
 
 class ChatMessage {
-  ChatMessage({required this.text, required this.isUser});
+  ChatMessage({
+    required this.text,
+    required this.isUser,
+    this.imageBytes,
+  });
 
   final String text;
   final bool isUser;
+  final Uint8List? imageBytes;
 }
 
 class ChatPage extends StatefulWidget {
@@ -54,10 +62,12 @@ class _ChatPageState extends State<ChatPage> {
   final _messages = <ChatMessage>[];
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
+  final _imagePicker = ImagePicker();
 
   bool _isInitializing = true;
   bool _isSending = false;
   String? _errorMessage;
+  Uint8List? _pendingImage;
 
   @override
   void initState() {
@@ -89,22 +99,31 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
-    if (text.isEmpty || _isSending) {
+    final hasImage = _pendingImage != null;
+    if ((text.isEmpty && !hasImage) || _isSending) {
       return;
     }
 
+    final imageBytes = _pendingImage;
+
     setState(() {
       _isSending = true;
-      _messages.add(ChatMessage(text: text, isUser: true));
+      _messages.add(
+        ChatMessage(text: text, isUser: true, imageBytes: imageBytes),
+      );
       _messages.add(ChatMessage(text: '', isUser: false));
       _inputController.clear();
+      _pendingImage = null;
     });
     _scrollToBottom();
 
     final responseIndex = _messages.length - 1;
 
     try {
-      await for (final chunk in _service.sendMessage(text)) {
+      await for (final chunk in _service.sendMessage(
+        text,
+        imageBytes: imageBytes,
+      )) {
         if (!mounted) {
           return;
         }
@@ -146,6 +165,73 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
+  Future<void> _pickImage() async {
+    if (_isSending) {
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Photo library'),
+                onTap: () => _handleImagePick(ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Camera'),
+                onTap: () => _handleImagePick(ImageSource.camera),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleImagePick(ImageSource source) async {
+    Navigator.of(context).pop();
+    try {
+      final pickedFile = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+
+      if (pickedFile == null) {
+        return;
+      }
+
+      final bytes = await pickedFile.readAsBytes();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _pendingImage = bytes;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Image error: $error')),
+      );
+    }
+  }
+
+  void _clearChat() {
+    setState(() {
+      _messages.clear();
+      _pendingImage = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -155,6 +241,13 @@ class _ChatPageState extends State<ChatPage> {
         elevation: 0,
         backgroundColor: const Color(0xFFF6F4F1),
         foregroundColor: const Color(0xFF1F1F1F),
+        actions: [
+          IconButton(
+            tooltip: 'Clear chat',
+            onPressed: _messages.isEmpty ? null : _clearChat,
+            icon: const Icon(Icons.delete_outline_rounded),
+          ),
+        ],
       ),
       body: SafeArea(
         child: _isInitializing
@@ -193,13 +286,35 @@ class _ChatPageState extends State<ChatPage> {
                                       : const Color(0xFFE2DED8),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: Text(
-                                  message.text,
-                                  style: TextStyle(
-                                    color: message.isUser
-                                        ? Colors.white
-                                        : const Color(0xFF1F1F1F),
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (message.imageBytes != null)
+                                      ClipRRect(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        child: Image.memory(
+                                          message.imageBytes!,
+                                          width: 220,
+                                          height: 220,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    if (message.text.isNotEmpty)
+                                      Padding(
+                                        padding: EdgeInsets.only(
+                                          top: message.imageBytes == null ? 0 : 10,
+                                        ),
+                                        child: Text(
+                                          message.text,
+                                          style: TextStyle(
+                                            color: message.isUser
+                                                ? Colors.white
+                                                : const Color(0xFF1F1F1F),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
                             );
@@ -218,55 +333,104 @@ class _ChatPageState extends State<ChatPage> {
                           ),
                         ),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _inputController,
-                                textInputAction: TextInputAction.send,
-                                onSubmitted: (_) => _sendMessage(),
-                                decoration: const InputDecoration(
-                                  hintText: 'Ask Gemma anything... ',
-                                  border: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF1F1F1F),
+                            if (_pendingImage != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Row(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Image.memory(
+                                        _pendingImage!,
+                                        width: 56,
+                                        height: 56,
+                                        fit: BoxFit.cover,
+                                      ),
                                     ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF1F1F1F),
-                                      width: 1.2,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'Image attached',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium,
+                                      ),
                                     ),
-                                  ),
+                                    IconButton(
+                                      tooltip: 'Remove image',
+                                      onPressed: () {
+                                        setState(() {
+                                          _pendingImage = null;
+                                        });
+                                      },
+                                      icon: const Icon(Icons.close_rounded),
+                                    ),
+                                  ],
                                 ),
-                                minLines: 1,
-                                maxLines: 4,
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            SizedBox(
-                              height: 48,
-                              width: 48,
-                              child: ElevatedButton(
-                                onPressed: _isSending ? null : _sendMessage,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF1F1F1F),
-                                  foregroundColor: Colors.white,
-                                  padding: EdgeInsets.zero,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
+                            Row(
+                              children: [
+                                IconButton(
+                                  tooltip: 'Attach image',
+                                  onPressed: _pickImage,
+                                  icon: const Icon(Icons.add_photo_alternate),
                                 ),
-                                child: _isSending
-                                    ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _inputController,
+                                    textInputAction: TextInputAction.send,
+                                    onSubmitted: (_) => _sendMessage(),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Ask Gemma anything... ',
+                                      border: OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                          color: Color(0xFF1F1F1F),
                                         ),
-                                      )
-                                    : const Icon(Icons.send_rounded, size: 20),
-                              ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                          color: Color(0xFF1F1F1F),
+                                          width: 1.2,
+                                        ),
+                                      ),
+                                    ),
+                                    minLines: 1,
+                                    maxLines: 4,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                SizedBox(
+                                  height: 48,
+                                  width: 48,
+                                  child: ElevatedButton(
+                                    onPressed: _isSending ? null : _sendMessage,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF1F1F1F),
+                                      foregroundColor: Colors.white,
+                                      padding: EdgeInsets.zero,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                    child: _isSending
+                                        ? const SizedBox(
+                                            height: 20,
+                                            width: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.send_rounded,
+                                            size: 20,
+                                          ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
