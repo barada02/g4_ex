@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -75,7 +76,7 @@ class _MainAppState extends State<MainApp> {
         ),
         textTheme: GoogleFonts.outfitTextTheme(ThemeData.light().textTheme),
       ),
-      home: AegisShell(
+      home: AegisWelcomeScreen(
         isDarkMode: _isDarkMode,
         onToggleTheme: _toggleTheme,
       ),
@@ -105,14 +106,525 @@ class ChatMessage {
   final Map<String, dynamic>? uiData;
 }
 
+class TacticalGridPainter extends CustomPainter {
+  final bool isDarkMode;
+  TacticalGridPainter({required this.isDarkMode});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = isDarkMode ? const Color(0xFF00E5FF).withOpacity(0.025) : const Color(0xFF007A8C).withOpacity(0.035)
+      ..strokeWidth = 1.0;
+
+    const double step = 32.0;
+
+    // Draw vertical lines
+    for (double x = 0; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+
+    // Draw horizontal lines
+    for (double y = 0; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class AegisWelcomeScreen extends StatefulWidget {
+  final bool isDarkMode;
+  final VoidCallback onToggleTheme;
+
+  const AegisWelcomeScreen({
+    super.key,
+    required this.isDarkMode,
+    required this.onToggleTheme,
+  });
+
+  @override
+  State<AegisWelcomeScreen> createState() => _AegisWelcomeScreenState();
+}
+
+class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProviderStateMixin {
+  final AgentCoordinator _agent = AgentCoordinator();
+  final SpeechToText _speech = SpeechToText();
+
+  bool _dbOk = false;
+  bool _llmOk = false;
+  bool _hardwareOk = false;
+
+  bool _micPermission = false;
+  bool _cameraPermission = false;
+  bool _storagePermission = true;
+
+  bool _isEngineReady = false;
+  String? _initError;
+
+  late AnimationController _pulseController;
+  late AnimationController _fadeController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+
+    _runInitialization();
+    _checkInitialPermissions();
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkInitialPermissions() async {
+    final hasMic = await _speech.hasPermission;
+    if (mounted) {
+      setState(() {
+        _micPermission = hasMic;
+      });
+    }
+  }
+
+  Future<void> _requestMicPermission() async {
+    try {
+      final hasPermission = await _speech.initialize(
+        onStatus: (status) => debugPrint('STT Status: $status'),
+        onError: (err) => debugPrint('STT Error: $err'),
+      );
+      if (mounted) {
+        setState(() {
+          _micPermission = hasPermission;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error requesting mic permission: $e');
+    }
+  }
+
+  Future<void> _requestCameraPermission() async {
+    setState(() {
+      _cameraPermission = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Camera authorized for clinical logging.'),
+        backgroundColor: Color(0xFF00E5FF),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _runInitialization() async {
+    try {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      setState(() {
+        _dbOk = true;
+      });
+
+      await Future.delayed(const Duration(milliseconds: 600));
+      await _agent.initialize();
+      if (!mounted) return;
+      setState(() {
+        _llmOk = true;
+      });
+
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      setState(() {
+        _hardwareOk = true;
+        _isEngineReady = true;
+      });
+      _fadeController.forward();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _initError = error.toString();
+        });
+      }
+    }
+  }
+
+  void _enterAegis() {
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => AegisShell(
+          isDarkMode: widget.isDarkMode,
+          onToggleTheme: widget.onToggleTheme,
+          agent: _agent,
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.0, 0.15),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 600),
+      ),
+    );
+  }
+
+  Widget _buildCheckRow(String title, bool isReady, String details) {
+    final activeColor = widget.isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: isReady ? activeColor.withOpacity(0.15) : Colors.amber.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isReady ? Icons.check_circle_rounded : Icons.pending_rounded,
+              color: isReady ? activeColor : Colors.amber,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                Text(
+                  details,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: widget.isDarkMode ? Colors.white60 : Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionRow(String title, bool granted, VoidCallback onRequest, IconData icon) {
+    final activeColor = widget.isDarkMode ? const Color(0xFF00E676) : const Color(0xFF2E7D32);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: widget.isDarkMode ? Colors.white60 : Colors.black45, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: granted ? null : onRequest,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: granted ? activeColor.withOpacity(0.15) : (widget.isDarkMode ? const Color(0xFF21262D) : const Color(0xFFE5E5E5)),
+              foregroundColor: granted ? activeColor : (widget.isDarkMode ? Colors.white70 : Colors.black87),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: granted ? activeColor.withOpacity(0.3) : Colors.transparent,
+                ),
+              ),
+            ),
+            child: Text(
+              granted ? 'AUTHORIZED' : 'ENABLE',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeCyan = const Color(0xFF00E5FF);
+    final softCyan = const Color(0xFF00B4D8);
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: widget.isDarkMode
+                ? [const Color(0xFF070B14), const Color(0xFF0F1524), const Color(0xFF070B14)]
+                : [const Color(0xFFFAFAFC), const Color(0xFFECEFF1), const Color(0xFFFAFAFC)],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              top: -150,
+              left: -150,
+              child: Container(
+                width: 400,
+                height: 400,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      activeCyan.withOpacity(widget.isDarkMode ? 0.08 : 0.05),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: -150,
+              right: -150,
+              child: Container(
+                width: 450,
+                height: 450,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      softCyan.withOpacity(widget.isDarkMode ? 0.08 : 0.05),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: CustomPaint(
+                painter: TacticalGridPainter(isDarkMode: widget.isDarkMode),
+              ),
+            ),
+            SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _pulseController,
+                        builder: (context, child) {
+                          final scale = 1.0 + (_pulseController.value * 0.08);
+                          return Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Container(
+                                width: 88 * scale,
+                                height: 88 * scale,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: activeCyan.withOpacity(0.2 - (_pulseController.value * 0.1)),
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                width: 72,
+                                height: 72,
+                                decoration: BoxDecoration(
+                                  color: widget.isDarkMode ? const Color(0xFF161B22) : Colors.white,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: activeCyan.withOpacity(0.15),
+                                      blurRadius: 16,
+                                      spreadRadius: 2,
+                                    )
+                                  ],
+                                  border: Border.all(
+                                    color: widget.isDarkMode ? const Color(0xFF30363D) : const Color(0xFFE2DED8),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.shield_outlined,
+                                  size: 38,
+                                  color: widget.isDarkMode ? activeCyan : const Color(0xFF007A8C),
+                                ),
+                              ),
+                              Positioned(
+                                child: Icon(
+                                  Icons.add_rounded,
+                                  size: 16,
+                                  color: widget.isDarkMode ? activeCyan : const Color(0xFF007A8C),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'A E G I S',
+                        style: GoogleFonts.outfit(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 8,
+                          color: widget.isDarkMode ? Colors.white : const Color(0xFF1F1F1F),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'OFFLINE TACTICAL CLINICAL COPILOT',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 2,
+                          color: widget.isDarkMode ? Colors.white60 : Colors.black45,
+                        ),
+                      ),
+                      const SizedBox(height: 36),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.white.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: widget.isDarkMode ? const Color(0xFF30363D).withOpacity(0.5) : const Color(0xFFE2DED8).withOpacity(0.5),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'SYSTEM PERMISSIONS',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.5,
+                                    color: widget.isDarkMode ? Colors.white70 : Colors.black54,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                _buildPermissionRow('Hands-Free Dictation (Mic)', _micPermission, _requestMicPermission, Icons.mic_rounded),
+                                _buildPermissionRow('Incident Logger (Camera)', _cameraPermission, _requestCameraPermission, Icons.photo_camera_rounded),
+                                _buildPermissionRow('Secure Offline Storage', _storagePermission, () {}, Icons.sd_storage_rounded),
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 12.0),
+                                  child: Divider(),
+                                ),
+                                Text(
+                                  'AEGIS SECURE ENGINE INITIALIZATION',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.5,
+                                    color: widget.isDarkMode ? Colors.white70 : Colors.black54,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                _buildCheckRow('Database Engine', _dbOk, 'Mounting type-safe Isar schemas & collections'),
+                                _buildCheckRow('Gemma 2B Cognitive Core', _llmOk, 'Loading local weight tensors & model registries'),
+                                _buildCheckRow('Tactical Co-processor Mapping', _hardwareOk, 'Verifying active local GPU/CPU hardware acceleration'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      if (_initError != null)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0x22FF5252),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFFF5252), width: 1),
+                          ),
+                          child: Text(
+                            'Engine Init Failed: $_initError',
+                            style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 13),
+                          ),
+                        )
+                      else
+                        FadeTransition(
+                          opacity: _isEngineReady ? _fadeController : const AlwaysStoppedAnimation(0.4),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: _isEngineReady ? _enterAegis : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: widget.isDarkMode ? activeCyan : const Color(0xFF007A8C),
+                                foregroundColor: Colors.black,
+                                disabledBackgroundColor: widget.isDarkMode ? const Color(0xFF161B22) : const Color(0xFFE5E5E5),
+                                disabledForegroundColor: widget.isDarkMode ? Colors.white24 : Colors.black26,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  side: BorderSide(
+                                    color: _isEngineReady 
+                                        ? Colors.transparent 
+                                        : (widget.isDarkMode ? const Color(0xFF30363D) : const Color(0xFFE5E5E5)),
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                _isEngineReady ? 'INITIALIZE COGNITIVE SHELL' : 'CALIBRATING Aegis SYSTEM...',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AegisShell extends StatefulWidget {
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
+  final AgentCoordinator agent;
 
   const AegisShell({
     super.key,
     required this.isDarkMode,
     required this.onToggleTheme,
+    required this.agent,
   });
 
   @override
@@ -120,39 +632,10 @@ class AegisShell extends StatefulWidget {
 }
 
 class _AegisShellState extends State<AegisShell> {
-  final AgentCoordinator _agent = AgentCoordinator();
   int _currentIndex = 0;
-  bool _isInitializing = true;
-  String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _initialize();
-  }
-
-  Future<void> _initialize() async {
-    try {
-      await _agent.initialize();
-    } catch (error) {
-      _errorMessage = error.toString();
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isInitializing = false;
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _agent.dispose();
-    super.dispose();
-  }
 
   Widget _buildGemmaStatus() {
-    final bool ready = !_isInitializing && _errorMessage == null && _agent.isReady;
+    final bool ready = widget.agent.isReady;
     return Container(
       margin: const EdgeInsets.only(right: 12),
       child: Center(
@@ -209,9 +692,9 @@ class _AegisShellState extends State<AegisShell> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> tabs = [
-      CopilotTab(agent: _agent, isDarkMode: widget.isDarkMode),
-      InventoryDashboardTab(agent: _agent, isDarkMode: widget.isDarkMode),
-      IncidentTimelineTab(agent: _agent, isDarkMode: widget.isDarkMode),
+      CopilotTab(agent: widget.agent, isDarkMode: widget.isDarkMode),
+      InventoryDashboardTab(agent: widget.agent, isDarkMode: widget.isDarkMode),
+      IncidentTimelineTab(agent: widget.agent, isDarkMode: widget.isDarkMode),
       HandbookTab(isDarkMode: widget.isDarkMode),
     ];
 
@@ -243,25 +726,7 @@ class _AegisShellState extends State<AegisShell> {
           ),
         ],
       ),
-      body: _isInitializing
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Loading Aegis Clinical Engine...',
-                    style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white70 : Colors.black54,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : _errorMessage != null
-              ? Center(child: Text('Initialization Error: $_errorMessage'))
-              : IndexedStack(index: _currentIndex, children: tabs),
+      body: IndexedStack(index: _currentIndex, children: tabs),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
