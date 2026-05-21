@@ -7,7 +7,8 @@ import 'package:isar_community/isar.dart';
 
 import 'agent_events.dart';
 import '../data/isar_database.dart';
-import '../data/note.dart';
+import '../data/inventory_item.dart';
+import '../data/incident_log.dart';
 import 'base_tool.dart';
 import 'tool_registry.dart';
 import 'tools/incident_log_tool.dart';
@@ -17,7 +18,6 @@ import 'tools/inventory_add_tool.dart';
 import 'tools/inventory_low_stock_tool.dart';
 import 'tools/inventory_search_tool.dart';
 import 'tools/inventory_update_tool.dart';
-import 'tools/medical_store.dart';
 import 'tools/protocol_lookup_tool.dart';
 
 class AgentCoordinator {
@@ -25,7 +25,7 @@ class AgentCoordinator {
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
 
   static const _finalResponseInstructions = '''
-You are an offline medical support assistant.
+You are Aegis, an offline emergency medical support assistant.
 A tool was executed for the user. Use the tool result and respond conversationally.
 Do not output JSON. Provide clear, calm guidance and next steps.
 Add a short safety reminder when discussing medical care.
@@ -106,12 +106,27 @@ Add a short safety reminder when discussing medical care.
     if (tool == null) {
       yield AgentEvent(
         type: AgentEventType.responseToken,
-        data: '⚠️ Agent called an unknown tool: "${decision.tool}"',
+        data: '⚠️ Aegis Agent called an unknown tool: "${decision.tool}"',
       );
       return;
     }
 
-    final result = await tool.execute(decision.arguments);
+    // Capture visual context and tool execution safely with visual error reporting
+    ToolResult result;
+    try {
+      final Map<String, dynamic> toolArguments = {
+        ...?decision.arguments,
+        if (imageBytes != null) 'imageBytes': imageBytes,
+      };
+      result = await tool.execute(toolArguments);
+    } catch (e) {
+      result = ToolResult(
+        toolName: tool.name,
+        output: '⚠️ Database/Schema Error: ${tool.name} failed to process. Details: $e',
+        isError: true,
+      );
+    }
+
     if (result.uiComponentType != null && result.uiData != null) {
       yield AgentEvent(
         type: AgentEventType.uiRender,
@@ -124,7 +139,10 @@ Add a short safety reminder when discussing medical care.
     }
 
     if (result.isError) {
-      yield AgentEvent(type: AgentEventType.responseToken, data: result.output);
+      yield AgentEvent(
+        type: AgentEventType.responseToken,
+        data: '\n\n🚨 **Tool Failure Diagnostic Alert**\n> ${result.output}\n',
+      );
       return;
     }
 
@@ -213,16 +231,38 @@ Add a short safety reminder when discussing medical care.
     try {
       return jsonDecode(rawJson);
     } catch (_) {
-      final start = rawJson.indexOf('{');
-      final end = rawJson.lastIndexOf('}');
-      if (start == -1 || end == -1 || end <= start) {
-        return null;
+      var candidate = rawJson;
+      // Strip off markdown wraps cleanly
+      final startBlock = candidate.indexOf('```json');
+      if (startBlock != -1) {
+        final endBlock = candidate.indexOf('```', startBlock + 7);
+        if (endBlock != -1) {
+          candidate = candidate.substring(startBlock + 7, endBlock).trim();
+        }
+      } else {
+        final startBlockGeneric = candidate.indexOf('```');
+        if (startBlockGeneric != -1) {
+          final endBlockGeneric = candidate.indexOf('```', startBlockGeneric + 3);
+          if (endBlockGeneric != -1) {
+            candidate = candidate.substring(startBlockGeneric + 3, endBlockGeneric).trim();
+          }
+        }
       }
-      final candidate = rawJson.substring(start, end + 1);
+
       try {
         return jsonDecode(candidate);
       } catch (_) {
-        return null;
+        final start = candidate.indexOf('{');
+        final end = candidate.lastIndexOf('}');
+        if (start == -1 || end == -1 || end <= start) {
+          return null;
+        }
+        final finalCandidate = candidate.substring(start, end + 1);
+        try {
+          return jsonDecode(finalCandidate);
+        } catch (_) {
+          return null;
+        }
       }
     }
   }
@@ -234,70 +274,58 @@ Add a short safety reminder when discussing medical care.
 
   Future<void> _seedDemoData() async {
     final isar = _database.instance;
-    final collection = isar.collection<Note>();
-    final count = await collection.count();
+    final count = await isar.inventoryItems.count();
     if (count > 0) {
       return;
     }
 
     final demoInventory = [
-      buildInventoryPayload(
-        name: 'Bandage Roll',
-        quantity: 18,
-        unit: 'rolls',
-        location: 'Clinic Box A',
-        expiry: '2026-09-01',
-        notes: 'Sterile gauze bandage rolls.',
-      ),
-      buildInventoryPayload(
-        name: 'Antiseptic Wipes',
-        quantity: 42,
-        unit: 'packs',
-        location: 'Clinic Box B',
-        expiry: '2027-01-15',
-      ),
-      buildInventoryPayload(
-        name: 'Pain Relief Tablets',
-        quantity: 60,
-        unit: 'tablets',
-        location: 'Clinic Box C',
-        expiry: '2026-12-31',
-        notes: 'Adult dosage only.',
-      ),
+      InventoryItem()
+        ..name = 'Bandage Roll'
+        ..quantity = 18.0
+        ..unit = 'rolls'
+        ..location = 'Clinic Box A'
+        ..expiryDate = DateTime.tryParse('2026-09-01')
+        ..notes = 'Sterile gauze bandage rolls.'
+        ..updatedAt = DateTime.now(),
+      InventoryItem()
+        ..name = 'Antiseptic Wipes'
+        ..quantity = 42.0
+        ..unit = 'packs'
+        ..location = 'Clinic Box B'
+        ..expiryDate = DateTime.tryParse('2027-01-15')
+        ..notes = 'Convenient sterile sanitizing wipes.'
+        ..updatedAt = DateTime.now(),
+      InventoryItem()
+        ..name = 'Pain Relief Tablets'
+        ..quantity = 60.0
+        ..unit = 'tablets'
+        ..location = 'Clinic Box C'
+        ..expiryDate = DateTime.tryParse('2026-12-31')
+        ..notes = 'Adult dosage only.'
+        ..updatedAt = DateTime.now(),
     ];
 
     final demoIncidents = [
-      buildIncidentPayload(
-        title: 'Sprained Ankle',
-        description: 'Swelling after evacuation walk, pain on weight bearing.',
-        severity: 'medium',
-        symptoms: 'Swelling, tenderness',
-        actionTaken: 'Rest, cold pack, compression wrap.',
-      ),
-      buildIncidentPayload(
-        title: 'Minor Burn',
-        description: 'Contact with hot pan, redness and mild blistering.',
-        severity: 'low',
-        symptoms: 'Redness, warmth',
-        actionTaken: 'Cooled with clean water, covered with clean dressing.',
-      ),
-    ];
-
-    final notes = <Note>[
-      for (final item in demoInventory)
-        Note()
-          ..title = item['name']?.toString() ?? 'Inventory Item'
-          ..content = encodePayload(item)
-          ..createdAt = DateTime.now(),
-      for (final incident in demoIncidents)
-        Note()
-          ..title = incident['title']?.toString() ?? 'Incident'
-          ..content = encodePayload(incident)
-          ..createdAt = DateTime.now(),
+      IncidentLog()
+        ..title = 'Sprained Ankle'
+        ..description = 'Swelling after evacuation walk, pain on weight bearing.'
+        ..severity = 'medium'
+        ..symptoms = 'Swelling, tenderness'
+        ..actionTaken = 'Rest, cold pack, compression wrap.'
+        ..createdAt = DateTime.now(),
+      IncidentLog()
+        ..title = 'Minor Burn'
+        ..description = 'Contact with hot pan, redness and mild blistering.'
+        ..severity = 'low'
+        ..symptoms = 'Redness, warmth'
+        ..actionTaken = 'Cooled with clean water, covered with clean dressing.'
+        ..createdAt = DateTime.now(),
     ];
 
     await isar.writeTxn(() async {
-      await collection.putAll(notes);
+      await isar.inventoryItems.putAll(demoInventory);
+      await isar.incidentLogs.putAll(demoIncidents);
     });
   }
 }

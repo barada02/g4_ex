@@ -1,7 +1,8 @@
+import 'package:isar_community/isar.dart';
+
 import '../../data/isar_database.dart';
-import '../../data/note.dart';
+import '../../data/inventory_item.dart';
 import '../base_tool.dart';
-import 'medical_store.dart';
 
 class InventoryAddTool extends BaseTool {
   InventoryAddTool(this._database);
@@ -32,7 +33,7 @@ class InventoryAddTool extends BaseTool {
   @override
   Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final name = arguments['name']?.toString().trim();
-    final quantity = _parseNumber(arguments['quantity']);
+    final quantity = _parseNumber(arguments['quantity']).toDouble();
     final unit = arguments['unit']?.toString().trim();
 
     if (name == null || name.isEmpty) {
@@ -59,22 +60,23 @@ class InventoryAddTool extends BaseTool {
       );
     }
 
-    final payload = buildInventoryPayload(
-      name: name,
-      quantity: quantity,
-      unit: unit,
-      location: arguments['location']?.toString().trim(),
-      expiry: arguments['expiry']?.toString().trim(),
-      notes: arguments['notes']?.toString().trim(),
-    );
-
-    final note = Note()
-      ..title = name
-      ..content = encodePayload(payload)
-      ..createdAt = DateTime.now();
+    final expiryStr = arguments['expiry']?.toString().trim();
+    final expiryDate = expiryStr != null && expiryStr.isNotEmpty
+        ? DateTime.tryParse(expiryStr)
+        : null;
 
     final isar = _database.instance;
-    await isar.writeTxn(() => isar.collection<Note>().put(note));
+
+    final item = InventoryItem()
+      ..name = name
+      ..quantity = quantity
+      ..unit = unit
+      ..location = arguments['location']?.toString().trim()
+      ..expiryDate = expiryDate
+      ..notes = arguments['notes']?.toString().trim()
+      ..updatedAt = DateTime.now();
+
+    await isar.writeTxn(() => isar.inventoryItems.put(item));
 
     return ToolResult(
       toolName: this.name,

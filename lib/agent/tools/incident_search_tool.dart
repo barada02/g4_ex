@@ -1,9 +1,8 @@
 import 'package:isar_community/isar.dart';
 
 import '../../data/isar_database.dart';
-import '../../data/note.dart';
+import '../../data/incident_log.dart';
 import '../base_tool.dart';
-import 'medical_store.dart';
 
 class IncidentSearchTool extends BaseTool {
   IncidentSearchTool(this._database);
@@ -38,28 +37,16 @@ class IncidentSearchTool extends BaseTool {
     }
 
     final isar = _database.instance;
-    final collection = isar.collection<Note>();
-    final titleMatches = await collection
+    final incidents = await isar.incidentLogs
         .filter()
         .titleContains(query, caseSensitive: false)
+        .or()
+        .descriptionContains(query, caseSensitive: false)
+        .or()
+        .symptomsContains(query, caseSensitive: false)
+        .or()
+        .severityEqualTo(query, caseSensitive: false)
         .findAll();
-    final contentMatches = await collection
-        .filter()
-        .contentContains(query, caseSensitive: false)
-        .findAll();
-
-    final mergedById = <int, Note>{
-      for (final note in titleMatches) note.id: note,
-      for (final note in contentMatches) note.id: note,
-    };
-
-    final incidents = <Map<String, dynamic>>[];
-    for (final note in mergedById.values) {
-      final payload = decodeTypedPayload(note.content, incidentType);
-      if (payload != null) {
-        incidents.add(payload);
-      }
-    }
 
     if (incidents.isEmpty) {
       return ToolResult(
@@ -70,8 +57,8 @@ class IncidentSearchTool extends BaseTool {
 
     final buffer = StringBuffer('Incident matches:\n');
     for (final incident in incidents) {
-      final title = incident['title'] ?? 'Untitled incident';
-      final severity = incident['severity'] ?? 'unknown';
+      final title = incident.title;
+      final severity = incident.severity;
       buffer.writeln('- $title (severity: $severity)');
     }
 

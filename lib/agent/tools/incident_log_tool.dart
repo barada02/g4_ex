@@ -1,7 +1,9 @@
+import 'dart:typed_data';
+import 'package:isar_community/isar.dart';
+
 import '../../data/isar_database.dart';
-import '../../data/note.dart';
+import '../../data/incident_log.dart';
 import '../base_tool.dart';
-import 'medical_store.dart';
 
 class IncidentLogTool extends BaseTool {
   IncidentLogTool(this._database);
@@ -62,22 +64,25 @@ class IncidentLogTool extends BaseTool {
       );
     }
 
-    final payload = buildIncidentPayload(
-      title: title,
-      description: description,
-      severity: severity,
-      symptoms: arguments['symptoms']?.toString().trim(),
-      actionTaken: arguments['actionTaken']?.toString().trim(),
-      hasImage: arguments['hasImage'] == true,
-    );
-
-    final note = Note()
-      ..title = title
-      ..content = encodePayload(payload)
-      ..createdAt = DateTime.now();
+    // Extract raw image bytes passed in arguments (if any)
+    final dynamic rawImage = arguments['imageBytes'];
+    List<int>? imageBytes;
+    if (rawImage is List<int>) {
+      imageBytes = rawImage;
+    }
 
     final isar = _database.instance;
-    await isar.writeTxn(() => isar.collection<Note>().put(note));
+
+    final log = IncidentLog()
+      ..title = title
+      ..description = description
+      ..severity = severity
+      ..symptoms = arguments['symptoms']?.toString().trim()
+      ..actionTaken = arguments['actionTaken']?.toString().trim()
+      ..imageBytes = imageBytes
+      ..createdAt = DateTime.now();
+
+    await isar.writeTxn(() => isar.incidentLogs.put(log));
 
     return ToolResult(
       toolName: name,

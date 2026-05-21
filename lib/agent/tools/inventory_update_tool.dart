@@ -1,9 +1,8 @@
 import 'package:isar_community/isar.dart';
 
 import '../../data/isar_database.dart';
-import '../../data/note.dart';
+import '../../data/inventory_item.dart';
 import '../base_tool.dart';
-import 'medical_store.dart';
 
 class InventoryUpdateTool extends BaseTool {
   InventoryUpdateTool(this._database);
@@ -44,25 +43,22 @@ class InventoryUpdateTool extends BaseTool {
     }
 
     final isar = _database.instance;
-    final collection = isar.collection<Note>();
-    final matches = await collection
+    
+    // First try exact match
+    var item = await isar.inventoryItems
         .filter()
-        .titleContains(name, caseSensitive: false)
-        .findAll();
+        .nameEqualTo(name, caseSensitive: false)
+        .findFirst();
 
-    Note? target;
-    Map<String, dynamic>? payload;
-    for (final note in matches) {
-      final decoded = decodeTypedPayload(note.content, inventoryType);
-      final itemName = decoded?['name']?.toString().toLowerCase();
-      if (decoded != null && itemName == name.toLowerCase()) {
-        target = note;
-        payload = decoded;
-        break;
-      }
+    // Fallback to contains match if not found exactly
+    if (item == null) {
+      item = await isar.inventoryItems
+          .filter()
+          .nameContains(name, caseSensitive: false)
+          .findFirst();
     }
 
-    if (target == null || payload == null) {
+    if (item == null) {
       return ToolResult(
         toolName: this.name,
         output: 'No inventory item found named "$name".',
@@ -73,7 +69,9 @@ class InventoryUpdateTool extends BaseTool {
     final quantity = arguments['quantity'];
     final delta = arguments['delta'];
 
-    if (quantity == null && delta == null && arguments['unit'] == null) {
+    if (quantity == null && delta == null && arguments['unit'] == null &&
+        arguments['location'] == null && arguments['expiry'] == null && 
+        arguments['notes'] == null) {
       return ToolResult(
         toolName: this.name,
         output: 'Provide quantity, delta, or updated details to apply.',
@@ -81,36 +79,32 @@ class InventoryUpdateTool extends BaseTool {
       );
     }
 
-    final currentQty = (payload['quantity'] as num?) ?? 0;
     if (quantity != null) {
-      payload['quantity'] = _parseNumber(quantity);
+      item.quantity = _parseNumber(quantity).toDouble();
     } else if (delta != null) {
-      payload['quantity'] = currentQty + _parseNumber(delta);
+      item.quantity += _parseNumber(delta).toDouble();
     }
 
     if (arguments['unit'] != null) {
-      payload['unit'] = arguments['unit']?.toString().trim();
+      item.unit = arguments['unit']?.toString().trim() ?? item.unit;
     }
     if (arguments['location'] != null) {
-      payload['location'] = arguments['location']?.toString().trim();
+      item.location = arguments['location']?.toString().trim();
     }
     if (arguments['expiry'] != null) {
-      payload['expiry'] = arguments['expiry']?.toString().trim();
+      final expiryStr = arguments['expiry']?.toString().trim() ?? '';
+      item.expiryDate = expiryStr.isNotEmpty ? DateTime.tryParse(expiryStr) : null;
     }
     if (arguments['notes'] != null) {
-      payload['notes'] = arguments['notes']?.toString().trim();
+      item.notes = arguments['notes']?.toString().trim();
     }
-    payload['updatedAt'] = DateTime.now().toIso8601String();
+    item.updatedAt = DateTime.now();
 
-    target.content = encodePayload(payload);
-    await isar.writeTxn(() => collection.put(target!));
-
-    final newQty = payload['quantity'];
-    final unit = payload['unit'] ?? 'units';
+    await isar.writeTxn(() => isar.inventoryItems.put(item!));
 
     return ToolResult(
       toolName: this.name,
-      output: 'Updated "$name" to $newQty $unit.',
+      output: 'Updated "${item.name}" to ${item.quantity} ${item.unit}.',
     );
   }
 
