@@ -1,7 +1,8 @@
 import 'package:isar_community/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'note.dart';
+import 'inventory_item.dart';
+import 'incident_log.dart';
 
 class IsarDatabase {
   IsarDatabase();
@@ -25,7 +26,7 @@ class IsarDatabase {
 
     final dir = await getApplicationDocumentsDirectory();
     _isar = await Isar.open(
-      [NoteSchema],
+      [InventoryItemSchema, IncidentLogSchema],
       directory: dir.path,
     );
   }
