@@ -59,9 +59,9 @@ gantt
 ## Phase 3: Bottom Navigation & Multi-Tab Shell
 *Goal: Create a complete, functional app layout so responders can directly view and edit data without always going through the chat agent.*
 
-- [ ] **Bottom Navigation Bar**:
+- [x] **Bottom Navigation Bar**:
   - Refactor `lib/main.dart` to introduce a modern, clean bottom navigation layout.
-- [ ] **Four Dedicated Tabs**:
+- [x] **Four Dedicated Tabs**:
   1. **Copilot (Chat)**: Upgrade the chat console, rendering structured tool results in HTML cards.
   2. **Inventory Dashboard**: A visual dashboard listing supplies, categorizing them, and displaying glowing stock-level badges (Green = Good, Yellow = Low, Red = Out). Includes a quick text search and location filtering.
   3. **Incidents Timeline**: A clean vertical feed displaying logged incidents with severity level badges (Low, Medium, High), actions taken, and quick visual thumbnails.
@@ -72,12 +72,12 @@ gantt
 ## Phase 4: Aesthetic Polish & Premium Micro-Animations
 *Goal: Transform the look and feel into a premium, state-of-the-art medical field tool that matches our rigorous design guidelines.*
 
-- [ ] **Typography Overhaul**:
+- [x] **Typography Overhaul**:
   - Switch the primary interface font to **`Outfit`** or **`Inter`** using Google Fonts for a clean, futuristic, readable sans-serif look.
   - Retain a refined serif font (**`Lora`**) specifically for reading protocols and checklists to keep the professional "clinical manual" texture.
-- [ ] **Advanced Dark Mode / Light Mode**:
+- [x] **Advanced Dark Mode / Light Mode**:
   - Add a theme toggle. Emphasize a deep, soothing **Tactical Dark Mode** (colors like deep slate blue, clinical teal accents, and soft alerts) which is ideal for power-outages and night work.
-- [ ] **Gemma Status Bar**:
+- [x] **Gemma Status Bar**:
   - Design a beautiful glowing status indicator in the app bar that tracks:
     - AI Engine initializing (with progress indicator)
     - Ready / GPU-accelerated active status

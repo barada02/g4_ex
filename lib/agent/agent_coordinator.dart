@@ -37,6 +37,10 @@ Add a short safety reminder when discussing medical care.
   bool _ready = false;
   dynamic _model;
 
+  IsarDatabase get database => _database;
+  Isar get isar => _database.instance;
+  bool get isReady => _ready;
+
   AgentCoordinator() {
     _registry.registerTool(InventoryAddTool(_database));
     _registry.registerTool(InventoryUpdateTool(_database));
