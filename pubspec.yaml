@@ -17,7 +17,7 @@ dependencies:
   isar_community: ^3.1.0+2
   isar_community_flutter_libs: ^3.1.0+2
   path_provider: ^2.1.5
-  speech_to_text: ^6.6.2
+  speech_to_text: ^7.4.0
   
 
 dev_dependencies:
