@@ -1,6 +1,6 @@
 # 🛡️ Aegis - Offline Field Medicine Copilot
 
-Aegis is a premium, state-of-the-art **Offline Field Medicine Copilot** built using Flutter, running a local instance of Google's **Gemma-2B-it** model via LiteRT, and utilizing **Isar** as a high-performance local NoSQL database. It is designed specifically for off-grid, disaster recovery, and tactical emergency scenarios where cloud connectivity is compromised or entirely unavailable.
+Aegis is a premium, state-of-the-art **Offline Field Medicine Copilot** built using Flutter, running a local instance of Google's **Gemma 4 E2B** model via LiteRT, and utilizing **Isar** as a high-performance local NoSQL database. It is designed specifically for off-grid, disaster recovery, and tactical emergency scenarios where cloud connectivity is compromised or entirely unavailable.
 
 ---
 
@@ -31,7 +31,7 @@ graph TD
     end
 
     subgraph local_llm ["On-Device AI Engine"]
-        GM["Gemma-2B-it (LiteRT)"]:::model
+        GM["Gemma 4 E2B (LiteRT)"]:::model
     end
 
     subgraph Tool_System ["Dynamic Tool Registry"]
@@ -78,7 +78,7 @@ graph TD
 The core of Aegis is its elegant, **multi-stage on-device agentic cycle**. Unlike traditional chatbot applications, the agent acts as an autonomous router and structured program executor, ensuring high precision even when running a lightweight LLM on limited mobile hardware.
 
 ### 1. Two-Stage Execution Loop
-To maximize accuracy and bypass the reasoning constraints of a local 2B-parameter model, the `AgentCoordinator` splits model communication into two specialized steps:
+To maximize accuracy and bypass the reasoning constraints of an on-device **Gemma 4 E2B** model, the `AgentCoordinator` splits model communication into two specialized steps:
 
 ```
 [ User Prompt + Image ]
