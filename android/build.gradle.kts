@@ -1,3 +1,6 @@
+import com.android.build.gradle.LibraryExtension
+import org.gradle.api.Project
+
 allprojects {
     repositories {
         google()
@@ -17,6 +20,28 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+}
+
+subprojects {
+    val updateProject = { proj: Project ->
+        if (proj.plugins.hasPlugin("com.android.application") ||
+            proj.plugins.hasPlugin("com.android.library")
+        ) {
+            if (proj.name == "isar_flutter_libs") {
+                proj.extensions.findByType(LibraryExtension::class.java)?.apply {
+                    namespace = "dev.isar.isar_flutter_libs"
+                }
+            }
+        }
+    }
+
+    if (project.state.executed) {
+        updateProject(project)
+    } else {
+        project.afterEvaluate {
+            updateProject(project)
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

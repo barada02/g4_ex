@@ -10,15 +10,25 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_gemma: ^0.15.3
+  flutter_html: ^3.0.0-beta.2
+  google_fonts: ^6.2.1
   http: ^1.6.0
   image_picker: ^1.1.2
+  isar_community: ^3.1.0+2
+  isar_community_flutter_libs: ^3.1.0+2
   path_provider: ^2.1.5
+  speech_to_text: ^7.4.0
   
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  analyzer: 10.0.1
+  isar_community_generator: ^3.1.0+2
+  build_runner: ^2.4.0
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/protocols.json

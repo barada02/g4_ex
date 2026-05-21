@@ -1,0 +1,66 @@
+[
+  {
+    "id": "bleeding_control",
+    "title": "Bleeding Control",
+    "keywords": ["bleeding", "cut", "laceration", "wound"],
+    "steps": [
+      "Put on gloves or use a clean barrier if available.",
+      "Apply firm direct pressure with a clean cloth or bandage.",
+      "If blood soaks through, add more layers without removing the first.",
+      "Elevate the injured area above heart level if possible.",
+      "Apply a pressure wrap to hold the dressing in place.",
+      "Monitor for shock and keep the person warm."
+    ],
+    "warnings": [
+      "Do not remove embedded objects.",
+      "Do not use a tourniquet unless trained and bleeding is life-threatening."
+    ],
+    "seekHelp": [
+      "Bleeding does not slow after 10 minutes of pressure.",
+      "Blood is spurting or pooling rapidly.",
+      "Signs of shock: pale skin, confusion, rapid breathing."
+    ]
+  },
+  {
+    "id": "burns_basic",
+    "title": "Minor Burn Care",
+    "keywords": ["burn", "scald", "hot", "fire"],
+    "steps": [
+      "Remove the source of heat and cool the area with clean, cool water.",
+      "Continue cooling for 10-20 minutes if possible.",
+      "Remove tight items like rings before swelling starts.",
+      "Cover with a clean, non-stick dressing or cloth.",
+      "Keep the person hydrated and comfortable."
+    ],
+    "warnings": [
+      "Do not apply butter, oils, or toothpaste.",
+      "Do not break blisters."
+    ],
+    "seekHelp": [
+      "Burn is larger than the person's palm.",
+      "Burn is on face, hands, feet, or genitals.",
+      "Skin looks white, charred, or leathery."
+    ]
+  },
+  {
+    "id": "sprain_ankle",
+    "title": "Sprain or Strain",
+    "keywords": ["sprain", "strain", "ankle", "swelling"],
+    "steps": [
+      "Stop activity and rest the injured area.",
+      "Apply a cold pack for 10-15 minutes at a time.",
+      "Wrap with an elastic bandage for light compression.",
+      "Elevate the limb to reduce swelling.",
+      "Check circulation and loosen if numbness occurs."
+    ],
+    "warnings": [
+      "Do not wrap so tightly that toes or fingers turn blue.",
+      "Avoid heat in the first 24 hours."
+    ],
+    "seekHelp": [
+      "Severe pain or inability to bear weight.",
+      "Visible deformity or suspected fracture.",
+      "Numbness or loss of sensation."
+    ]
+  }
+]
