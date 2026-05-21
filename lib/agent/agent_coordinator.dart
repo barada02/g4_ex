@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma/core/model.dart';
 import 'package:isar_community/isar.dart';
 
 import 'agent_events.dart';
@@ -60,7 +59,7 @@ Add a short safety reminder when discussing medical care.
     _registry.unregisterTool(name);
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize({void Function(int percentage)? onProgress}) async {
     if (_ready) {
       return;
     }
@@ -68,7 +67,11 @@ Add a short safety reminder when discussing medical care.
     await FlutterGemma.installModel(
       modelType: ModelType.gemmaIt,
       fileType: ModelFileType.litertlm,
-    ).fromNetwork(_modelUrl).install();
+    ).fromNetwork(_modelUrl).withProgress((progress) {
+      if (onProgress != null) {
+        onProgress(progress);
+      }
+    }).install();
 
     await _database.initialize();
     await _seedDemoData();
@@ -119,7 +122,7 @@ Add a short safety reminder when discussing medical care.
     ToolResult result;
     try {
       final Map<String, dynamic> toolArguments = {
-        ...?decision.arguments,
+        ...decision.arguments,
         if (imageBytes != null) 'imageBytes': imageBytes,
       };
       result = await tool.execute(toolArguments);

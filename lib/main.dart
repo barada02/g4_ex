@@ -149,18 +149,11 @@ class AegisWelcomeScreen extends StatefulWidget {
 
 class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProviderStateMixin {
   final AgentCoordinator _agent = AgentCoordinator();
-  final SpeechToText _speech = SpeechToText();
-
-  bool _dbOk = false;
-  bool _llmOk = false;
-  bool _hardwareOk = false;
-
-  bool _micPermission = false;
-  bool _cameraPermission = false;
-  bool _storagePermission = true;
 
   bool _isEngineReady = false;
   String? _initError;
+  String _statusMessage = 'Mounting offline database & collections...';
+  int _downloadProgress = -1;
 
   late AnimationController _pulseController;
   late AnimationController _fadeController;
@@ -179,7 +172,6 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
     );
 
     _runInitialization();
-    _checkInitialPermissions();
   }
 
   @override
@@ -189,63 +181,41 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
     super.dispose();
   }
 
-  Future<void> _checkInitialPermissions() async {
-    final hasMic = await _speech.hasPermission;
-    if (mounted) {
-      setState(() {
-        _micPermission = hasMic;
-      });
-    }
-  }
-
-  Future<void> _requestMicPermission() async {
-    try {
-      final hasPermission = await _speech.initialize(
-        onStatus: (status) => debugPrint('STT Status: $status'),
-        onError: (err) => debugPrint('STT Error: $err'),
-      );
-      if (mounted) {
-        setState(() {
-          _micPermission = hasPermission;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error requesting mic permission: $e');
-    }
-  }
-
-  Future<void> _requestCameraPermission() async {
-    setState(() {
-      _cameraPermission = true;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Camera authorized for clinical logging.'),
-        backgroundColor: Color(0xFF00E5FF),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
   Future<void> _runInitialization() async {
     try {
       await Future.delayed(const Duration(milliseconds: 800));
       if (!mounted) return;
+      
       setState(() {
-        _dbOk = true;
+        _statusMessage = 'Verifying Gemma AI weights...';
       });
 
-      await Future.delayed(const Duration(milliseconds: 600));
-      await _agent.initialize();
+      await Future.delayed(const Duration(milliseconds: 400));
       if (!mounted) return;
-      setState(() {
-        _llmOk = true;
-      });
+
+      await _agent.initialize(
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _downloadProgress = progress;
+              _statusMessage = 'Downloading Gemma AI weights...';
+            });
+          }
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _downloadProgress = -1;
+          _statusMessage = 'Verifying tactical co-processor & hardware acceleration...';
+        });
+      }
 
       await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
+
       setState(() {
-        _hardwareOk = true;
+        _statusMessage = 'Aegis fully calibrated and ready.';
         _isEngineReady = true;
       });
       _fadeController.forward();
@@ -253,16 +223,18 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
       if (mounted) {
         setState(() {
           _initError = error.toString();
+          _statusMessage = 'Initialization failed.';
         });
       }
     }
   }
 
   void _enterAegis() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => AegisShell(
-          isDarkMode: widget.isDarkMode,
+          isDarkMode: isDarkMode,
           onToggleTheme: widget.onToggleTheme,
           agent: _agent,
         ),
@@ -283,89 +255,52 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
     );
   }
 
-  Widget _buildCheckRow(String title, bool isReady, String details) {
-    final activeColor = widget.isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: isReady ? activeColor.withOpacity(0.15) : Colors.amber.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isReady ? Icons.check_circle_rounded : Icons.pending_rounded,
-              color: isReady ? activeColor : Colors.amber,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                Text(
-                  details,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: widget.isDarkMode ? Colors.white60 : Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          )
-        ],
-      ),
-    );
-  }
+  Widget _buildStatusIndicator(bool isDarkMode) {
+    if (_isEngineReady) {
+      return Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: (isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C)).withOpacity(0.15),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.check_circle_rounded,
+          color: isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C),
+          size: 20,
+        ),
+      );
+    }
 
-  Widget _buildPermissionRow(String title, bool granted, VoidCallback onRequest, IconData icon) {
-    final activeColor = widget.isDarkMode ? const Color(0xFF00E676) : const Color(0xFF2E7D32);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Icon(icon, color: widget.isDarkMode ? Colors.white60 : Colors.black45, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: granted ? null : onRequest,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: granted ? activeColor.withOpacity(0.15) : (widget.isDarkMode ? const Color(0xFF21262D) : const Color(0xFFE5E5E5)),
-              foregroundColor: granted ? activeColor : (widget.isDarkMode ? Colors.white70 : Colors.black87),
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              minimumSize: Size.zero,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: granted ? activeColor.withOpacity(0.3) : Colors.transparent,
-                ),
-              ),
-            ),
-            child: Text(
-              granted ? 'AUTHORIZED' : 'ENABLE',
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
+    if (_initError != null) {
+      return Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.15),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.error_rounded,
+          color: Colors.redAccent,
+          size: 20,
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: CircularProgressIndicator(
+        strokeWidth: 2.5,
+        valueColor: AlwaysStoppedAnimation<Color>(
+          isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C),
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final activeCyan = const Color(0xFF00E5FF);
     final softCyan = const Color(0xFF00B4D8);
 
@@ -375,7 +310,7 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: widget.isDarkMode
+            colors: isDarkMode
                 ? [const Color(0xFF070B14), const Color(0xFF0F1524), const Color(0xFF070B14)]
                 : [const Color(0xFFFAFAFC), const Color(0xFFECEFF1), const Color(0xFFFAFAFC)],
           ),
@@ -392,7 +327,7 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      activeCyan.withOpacity(widget.isDarkMode ? 0.08 : 0.05),
+                      activeCyan.withOpacity(isDarkMode ? 0.08 : 0.05),
                       Colors.transparent,
                     ],
                   ),
@@ -409,7 +344,7 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      softCyan.withOpacity(widget.isDarkMode ? 0.08 : 0.05),
+                      softCyan.withOpacity(isDarkMode ? 0.08 : 0.05),
                       Colors.transparent,
                     ],
                   ),
@@ -418,7 +353,7 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
             ),
             Positioned.fill(
               child: CustomPaint(
-                painter: TacticalGridPainter(isDarkMode: widget.isDarkMode),
+                painter: TacticalGridPainter(isDarkMode: isDarkMode),
               ),
             ),
             SafeArea(
@@ -450,7 +385,7 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
                                 width: 72,
                                 height: 72,
                                 decoration: BoxDecoration(
-                                  color: widget.isDarkMode ? const Color(0xFF161B22) : Colors.white,
+                                  color: isDarkMode ? const Color(0xFF161B22) : Colors.white,
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
@@ -460,21 +395,21 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
                                     )
                                   ],
                                   border: Border.all(
-                                    color: widget.isDarkMode ? const Color(0xFF30363D) : const Color(0xFFE2DED8),
+                                    color: isDarkMode ? const Color(0xFF30363D) : const Color(0xFFE2DED8),
                                     width: 1.5,
                                   ),
                                 ),
                                 child: Icon(
                                   Icons.shield_outlined,
                                   size: 38,
-                                  color: widget.isDarkMode ? activeCyan : const Color(0xFF007A8C),
+                                  color: isDarkMode ? activeCyan : const Color(0xFF007A8C),
                                 ),
                               ),
                               Positioned(
                                 child: Icon(
                                   Icons.add_rounded,
                                   size: 16,
-                                  color: widget.isDarkMode ? activeCyan : const Color(0xFF007A8C),
+                                  color: isDarkMode ? activeCyan : const Color(0xFF007A8C),
                                 ),
                               ),
                             ],
@@ -488,7 +423,7 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
                           fontSize: 28,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 8,
-                          color: widget.isDarkMode ? Colors.white : const Color(0xFF1F1F1F),
+                          color: isDarkMode ? Colors.white : const Color(0xFF1F1F1F),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -498,7 +433,7 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 2,
-                          color: widget.isDarkMode ? Colors.white60 : Colors.black45,
+                          color: isDarkMode ? Colors.white60 : Colors.black45,
                         ),
                       ),
                       const SizedBox(height: 36),
@@ -507,48 +442,79 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                           child: Container(
-                            padding: const EdgeInsets.all(20),
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
                             decoration: BoxDecoration(
-                              color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.white.withOpacity(0.6),
+                              color: isDarkMode ? Colors.black.withOpacity(0.3) : Colors.white.withOpacity(0.6),
                               borderRadius: BorderRadius.circular(24),
                               border: Border.all(
-                                color: widget.isDarkMode ? const Color(0xFF30363D).withOpacity(0.5) : const Color(0xFFE2DED8).withOpacity(0.5),
+                                color: isDarkMode ? const Color(0xFF30363D).withOpacity(0.5) : const Color(0xFFE2DED8).withOpacity(0.5),
                                 width: 1.5,
                               ),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  'SYSTEM PERMISSIONS',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.5,
-                                    color: widget.isDarkMode ? Colors.white70 : Colors.black54,
+                                Row(
+                                  children: [
+                                    _buildStatusIndicator(isDarkMode),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'AEGIS SECURE ENGINE INITIALIZATION',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 1.5,
+                                              color: isDarkMode ? Colors.white70 : Colors.black54,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            _statusMessage,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDarkMode ? Colors.white.withOpacity(0.9) : const Color(0xFF1F1F1F),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (_downloadProgress >= 0) ...[
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: LinearProgressIndicator(
+                                            value: _downloadProgress / 100.0,
+                                            backgroundColor: isDarkMode ? const Color(0xFF21262D) : const Color(0xFFE5E5E5),
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C),
+                                            ),
+                                            minHeight: 6,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        '$_downloadProgress%',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                                const SizedBox(height: 10),
-                                _buildPermissionRow('Hands-Free Dictation (Mic)', _micPermission, _requestMicPermission, Icons.mic_rounded),
-                                _buildPermissionRow('Incident Logger (Camera)', _cameraPermission, _requestCameraPermission, Icons.photo_camera_rounded),
-                                _buildPermissionRow('Secure Offline Storage', _storagePermission, () {}, Icons.sd_storage_rounded),
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 12.0),
-                                  child: Divider(),
-                                ),
-                                Text(
-                                  'AEGIS SECURE ENGINE INITIALIZATION',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.5,
-                                    color: widget.isDarkMode ? Colors.white70 : Colors.black54,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                _buildCheckRow('Database Engine', _dbOk, 'Mounting type-safe Isar schemas & collections'),
-                                _buildCheckRow('Gemma 2B Cognitive Core', _llmOk, 'Loading local weight tensors & model registries'),
-                                _buildCheckRow('Tactical Co-processor Mapping', _hardwareOk, 'Verifying active local GPU/CPU hardware acceleration'),
+                                ],
                               ],
                             ),
                           ),
@@ -577,22 +543,22 @@ class _AegisWelcomeScreenState extends State<AegisWelcomeScreen> with TickerProv
                             child: ElevatedButton(
                               onPressed: _isEngineReady ? _enterAegis : null,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: widget.isDarkMode ? activeCyan : const Color(0xFF007A8C),
+                                backgroundColor: isDarkMode ? activeCyan : const Color(0xFF007A8C),
                                 foregroundColor: Colors.black,
-                                disabledBackgroundColor: widget.isDarkMode ? const Color(0xFF161B22) : const Color(0xFFE5E5E5),
-                                disabledForegroundColor: widget.isDarkMode ? Colors.white24 : Colors.black26,
+                                disabledBackgroundColor: isDarkMode ? const Color(0xFF161B22) : const Color(0xFFE5E5E5),
+                                disabledForegroundColor: isDarkMode ? Colors.white24 : Colors.black26,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                   side: BorderSide(
                                     color: _isEngineReady 
                                         ? Colors.transparent 
-                                        : (widget.isDarkMode ? const Color(0xFF30363D) : const Color(0xFFE5E5E5)),
+                                        : (isDarkMode ? const Color(0xFF30363D) : const Color(0xFFE5E5E5)),
                                   ),
                                 ),
                               ),
                               child: Text(
-                                _isEngineReady ? 'INITIALIZE COGNITIVE SHELL' : 'CALIBRATING Aegis SYSTEM...',
+                                _isEngineReady ? 'START' : 'CALIBRATING AEGIS SYSTEM...',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w900,
                                   fontSize: 13,
@@ -636,6 +602,7 @@ class _AegisShellState extends State<AegisShell> {
 
   Widget _buildGemmaStatus() {
     final bool ready = widget.agent.isReady;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: const EdgeInsets.only(right: 12),
       child: Center(
@@ -643,13 +610,13 @@ class _AegisShellState extends State<AegisShell> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: ready
-                ? (widget.isDarkMode ? const Color(0x2200E5FF) : const Color(0x22007A8C))
-                : (widget.isDarkMode ? const Color(0x22FFB300) : const Color(0x22FF8F00)),
+                ? (isDarkMode ? const Color(0x2200E5FF) : const Color(0x22007A8C))
+                : (isDarkMode ? const Color(0x22FFB300) : const Color(0x22FF8F00)),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: ready
-                  ? (widget.isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C))
-                  : (widget.isDarkMode ? const Color(0xFFFFB300) : const Color(0xFFFF8F00)),
+                  ? (isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C))
+                  : (isDarkMode ? const Color(0xFFFFB300) : const Color(0xFFFF8F00)),
               width: 1,
             ),
           ),
@@ -678,8 +645,8 @@ class _AegisShellState extends State<AegisShell> {
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: ready
-                      ? (widget.isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C))
-                      : (widget.isDarkMode ? const Color(0xFFFFB300) : const Color(0xFFFF8F00)),
+                      ? (isDarkMode ? const Color(0xFF00E5FF) : const Color(0xFF007A8C))
+                      : (isDarkMode ? const Color(0xFFFFB300) : const Color(0xFFFF8F00)),
                 ),
               ),
             ],
@@ -691,11 +658,12 @@ class _AegisShellState extends State<AegisShell> {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final List<Widget> tabs = [
-      CopilotTab(agent: widget.agent, isDarkMode: widget.isDarkMode),
-      InventoryDashboardTab(agent: widget.agent, isDarkMode: widget.isDarkMode),
-      IncidentTimelineTab(agent: widget.agent, isDarkMode: widget.isDarkMode),
-      HandbookTab(isDarkMode: widget.isDarkMode),
+      CopilotTab(agent: widget.agent, isDarkMode: isDarkMode),
+      InventoryDashboardTab(agent: widget.agent, isDarkMode: isDarkMode),
+      IncidentTimelineTab(agent: widget.agent, isDarkMode: isDarkMode),
+      HandbookTab(isDarkMode: isDarkMode),
     ];
 
     final titles = [
@@ -713,15 +681,15 @@ class _AegisShellState extends State<AegisShell> {
         ),
         centerTitle: false,
         elevation: 0,
-        backgroundColor: widget.isDarkMode ? const Color(0xFF161B22) : Colors.white,
-        foregroundColor: widget.isDarkMode ? Colors.white : const Color(0xFF1F1F1F),
+        backgroundColor: isDarkMode ? const Color(0xFF161B22) : Colors.white,
+        foregroundColor: isDarkMode ? Colors.white : const Color(0xFF1F1F1F),
         actions: [
           _buildGemmaStatus(),
           IconButton(
             tooltip: 'Toggle Theme',
             onPressed: widget.onToggleTheme,
             icon: Icon(
-              widget.isDarkMode ? Icons.wb_sunny_outlined : Icons.nightlight_round_outlined,
+              isDarkMode ? Icons.wb_sunny_outlined : Icons.nightlight_round_outlined,
             ),
           ),
         ],
@@ -731,7 +699,7 @@ class _AegisShellState extends State<AegisShell> {
         decoration: BoxDecoration(
           border: Border(
             top: BorderSide(
-              color: widget.isDarkMode ? const Color(0xFF30363D) : const Color(0xFFE5E5E5),
+              color: isDarkMode ? const Color(0xFF30363D) : const Color(0xFFE5E5E5),
               width: 1,
             ),
           ),
@@ -743,9 +711,9 @@ class _AegisShellState extends State<AegisShell> {
               _currentIndex = index;
             });
           },
-          backgroundColor: widget.isDarkMode ? const Color(0xFF161B22) : Colors.white,
+          backgroundColor: isDarkMode ? const Color(0xFF161B22) : Colors.white,
           selectedItemColor: Theme.of(context).primaryColor,
-          unselectedItemColor: widget.isDarkMode ? const Color(0xFF8B949E) : const Color(0xFF6B7280),
+          unselectedItemColor: isDarkMode ? const Color(0xFF8B949E) : const Color(0xFF6B7280),
           type: BottomNavigationBarType.fixed,
           elevation: 0,
           showSelectedLabels: true,
