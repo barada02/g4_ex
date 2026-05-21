@@ -8,6 +8,7 @@ import 'package:flutter_html/flutter_html.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:isar_community/isar.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import 'agent/agent_coordinator.dart';
 import 'agent/agent_events.dart';
@@ -328,7 +329,7 @@ class CopilotTab extends StatefulWidget {
   State<CopilotTab> createState() => _CopilotTabState();
 }
 
-class _CopilotTabState extends State<CopilotTab> {
+class _CopilotTabState extends State<CopilotTab> with TickerProviderStateMixin {
   final _messages = <ChatMessage>[];
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
@@ -337,11 +338,177 @@ class _CopilotTabState extends State<CopilotTab> {
   bool _isSending = false;
   Uint8List? _pendingImage;
 
+  // Speech-to-text integration fields
+  final SpeechToText _speech = SpeechToText();
+  bool _speechEnabled = false;
+  bool _isListening = false;
+  String _lastWords = '';
+  late AnimationController _micAnimationController;
+
+  @override
+  void initState() {
+    super.initState();
+    _micAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+  }
+
   @override
   void dispose() {
     _inputController.dispose();
     _scrollController.dispose();
+    _micAnimationController.dispose();
+    _speech.stop();
     super.dispose();
+  }
+
+  Future<void> _initSpeech() async {
+    try {
+      final available = await _speech.initialize(
+        onStatus: (status) {
+          debugPrint('Speech status: $status');
+          if (status == 'notListening' || status == 'done') {
+            if (mounted && _isListening) {
+              setState(() {
+                _isListening = false;
+              });
+            }
+          }
+        },
+        onError: (errorNotification) {
+          debugPrint('Speech error: $errorNotification');
+          if (mounted) {
+            setState(() {
+              _isListening = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Speech recognition error: ${errorNotification.errorMsg}'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _speechEnabled = available;
+        });
+      }
+    } catch (e) {
+      debugPrint('Speech initialization error: $e');
+      if (mounted) {
+        setState(() {
+          _speechEnabled = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleListening() async {
+    if (!_speechEnabled) {
+      await _initSpeech();
+    }
+
+    if (_speechEnabled) {
+      if (_isListening) {
+        await _stopListening();
+      } else {
+        await _startListening();
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Speech recognition is not available or permission denied.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _startListening() async {
+    setState(() {
+      _isListening = true;
+      _lastWords = '';
+    });
+
+    await _speech.listen(
+      onResult: (result) {
+        if (mounted) {
+          setState(() {
+            _lastWords = result.recognizedWords;
+            if (_lastWords.isNotEmpty) {
+              _inputController.text = _lastWords;
+              _inputController.selection = TextSelection.fromPosition(
+                TextPosition(offset: _inputController.text.length),
+              );
+            }
+          });
+        }
+      },
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 5),
+      partialResults: true,
+      cancelOnError: true,
+      listenMode: ListenMode.dictation,
+    );
+  }
+
+  Future<void> _stopListening() async {
+    await _speech.stop();
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+      });
+    }
+  }
+
+  Widget _buildMicButton() {
+    if (!_isListening) {
+      return IconButton(
+        tooltip: 'Voice Dictation',
+        onPressed: _toggleListening,
+        icon: Icon(
+          Icons.mic_none_rounded,
+          color: widget.isDarkMode ? const Color(0xFF8B949E) : const Color(0xFF6B7280),
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _micAnimationController,
+      builder: (context, child) {
+        final scale = 1.0 + (_micAnimationController.value * 0.25);
+        final opacity = 0.8 - (_micAnimationController.value * 0.6);
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: const Color(0xFFFF5252).withOpacity(opacity),
+                  width: 3.0 * scale,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Stop Dictation',
+              onPressed: _toggleListening,
+              icon: const Icon(
+                Icons.mic_rounded,
+                color: Color(0xFFFF5252),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _sendMessage() async {
@@ -818,6 +985,8 @@ class _CopilotTabState extends State<CopilotTab> {
                       ),
                     ),
                     const SizedBox(width: 4),
+                    _buildMicButton(),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: TextField(
                         controller: _inputController,
@@ -828,7 +997,7 @@ class _CopilotTabState extends State<CopilotTab> {
                           fontSize: 14,
                         ),
                         decoration: InputDecoration(
-                          hintText: 'Enter clinical directives...',
+                          hintText: _isListening ? 'Listening... speak now' : 'Enter clinical directives...',
                           filled: true,
                           fillColor: widget.isDarkMode ? const Color(0xFF0D1117) : Colors.white,
                           contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
